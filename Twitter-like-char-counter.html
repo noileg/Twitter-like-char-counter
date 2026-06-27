@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>文字数チェッカー</title>
+<style>
+  :root {
+    --bg: #f3ede3;
+    --paper: #fffdfa;
+    --ink: #2b2622;
+    --ink-soft: #8a7d6e;
+    --accent: #d35d3c;
+    --accent-soft: rgba(211, 93, 60, 0.16);
+    --line: #e4d8c6;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", serif;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  header {
+    padding: 22px 28px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  header h1 {
+    margin: 0 0 2px;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  header p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    font-family: -apple-system, "Hiragino Sans", sans-serif;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 18px;
+    padding: 14px 28px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+    font-family: -apple-system, "Hiragino Sans", sans-serif;
+    font-size: 13px;
+  }
+
+  .controls label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink-soft);
+  }
+
+  .controls input[type="number"] {
+    width: 80px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-family: inherit;
+  }
+
+  .presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .presets button {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink-soft);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .presets button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .controls .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-soft);
+  }
+
+  .spacer { flex: 1; }
+
+  #clearBtn {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  #clearBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+  main {
+    flex: 1;
+    padding: 24px 28px;
+    display: flex;
+  }
+
+  .editor-shell {
+    position: relative;
+    flex: 1;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(43, 38, 34, 0.05);
+    overflow: hidden; /* this is the only element that actually clips content */
+  }
+
+  /* Properties shared by both layers so the wrapped lines land in exactly
+     the same place in both. Sizing/positioning is intentionally NOT shared,
+     see #backdrop and #editor below. */
+  .mirror {
+    margin: 0;
+    padding: 26px 30px;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", serif;
+    font-size: 17px;
+    line-height: 2.05;
+    letter-spacing: 0.04em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  #backdrop {
+    position: absolute;
+    inset: 0; /* top: 0; left: 0; width: 100%; height: 100%; と同義です */
+    width: 100%;
+    height: 100%; /* editorと高さを揃える */
+    overflow-y: auto; /* editorと同じようにスクロール可能にする */
+    overflow-x: hidden;
+    color: transparent;
+    z-index: 1;
+    pointer-events: none;
+
+    /* ↓ この1行を追加！ */
+    background-attachment: local;
+
+    /* 背景（横線）の描画開始位置をpaddingの内側に合わせる */
+    background-origin: content-box;
+    background-clip: content-box;
+
+    background-image:
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc(2.05em - 1px),
+        rgba(43, 38, 34, 0.05) calc(2.05em - 1px),
+        rgba(43, 38, 34, 0.05) 2.05em
+      );
+  }
+
+  /* backdropにもスクロールバーの「幅」だけ持たせて、editorと折り返し位置を完璧に一致させる */
+  #backdrop::-webkit-scrollbar {
+    width: 11px;
+  }
+  #backdrop::-webkit-scrollbar-track,
+  #backdrop::-webkit-scrollbar-thumb {
+    background: transparent;
+    border: none;
+  }
+
+  #backdrop mark {
+    background: var(--accent-soft);
+    color: transparent;
+    border-radius: 2px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  #editor {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    outline: none;
+    resize: none;
+    caret-color: var(--accent);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+
+  #editor::-webkit-scrollbar {
+    width: 11px;
+  }
+  #editor::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  #editor::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 6px;
+    border: 3px solid var(--paper);
+  }
+  #editor::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-soft);
+  }
+
+  .autoscroll-indicator {
+    position: fixed;
+    width: 30px;
+    height: 30px;
+    margin-left: -15px;
+    margin-top: -15px;
+    border-radius: 50%;
+    background: rgba(43, 38, 34, 0.78);
+    pointer-events: none;
+    z-index: 9999;
+  }
+  .autoscroll-indicator::before {
+    content: "↕";
+    display: block;
+    width: 100%;
+    height: 100%;
+    line-height: 30px;
+    text-align: center;
+    color: #fff;
+    font-size: 16px;
+    font-family: -apple-system, sans-serif;
+  }
+
+  #editor::placeholder {
+    color: #b9ad9c;
+  }
+
+  footer {
+    padding: 14px 28px 20px;
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    font-family: -apple-system, "Hiragino Sans", sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    font-size: 13px;
+  }
+
+  footer .count-current {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  footer .status {
+    font-weight: 700;
+  }
+  footer .status.ok { color: #4c7a4c; }
+  footer .status.over { color: var(--accent); }
+
+  footer .hint {
+    margin-left: auto;
+    color: var(--ink-soft);
+    font-size: 11.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>文字数チェッカー</h1>
+  <p>テキストを貼り付けると、設定した文字数を超えた部分の背景に色がつきます。</p>
+</header>
+
+<div class="controls">
+  <label>
+    文字数の上限
+    <input type="number" id="thresholdInput" min="1" step="1" value="800" />
+  </label>
+
+  <div class="presets" id="presets"></div>
+
+  <label class="checkbox-row">
+    <input type="checkbox" id="includeWhitespace" checked />
+    改行・空白も文字数に含める
+  </label>
+
+  <div class="spacer"></div>
+  <button id="clearBtn" type="button">クリア</button>
+</div>
+
+<main>
+  <div class="editor-shell">
+    <div id="backdrop" class="mirror" aria-hidden="true"></div>
+    <textarea id="editor" class="mirror" placeholder="ここに本文を貼り付けてください…" spellcheck="false"></textarea>
+  </div>
+</main>
+
+<footer>
+  <span class="count-current"><span id="currentCount">0</span> 文字</span>
+  <span class="status ok" id="statusText">上限まであと 800 文字</span>
+  <span class="hint">このページはオフラインで動作し、入力内容はどこにも送信されません。</span>
+</footer>
+
+<script>
+  const editor = document.getElementById("editor");
+  const backdrop = document.getElementById("backdrop");
+  const thresholdInput = document.getElementById("thresholdInput");
+  const includeWhitespace = document.getElementById("includeWhitespace");
+  const currentCount = document.getElementById("currentCount");
+  const statusText = document.getElementById("statusText");
+  const clearBtn = document.getElementById("clearBtn");
+  const presets = document.getElementById("presets");
+
+  // Common Japanese essay / application-form length limits.
+  [400, 600, 800, 1000, 1200, 1600, 2000].forEach((n) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = n + "字";
+    btn.addEventListener("click", () => {
+      thresholdInput.value = n;
+      render();
+    });
+    presets.appendChild(btn);
+  });
+
+  function analyze(text, threshold, countAll) {
+    if (countAll) {
+      return { total: text.length, splitIndex: Math.max(0, Math.min(threshold, text.length)) };
+    }
+    let count = 0;
+    let splitIndex = text.length;
+    let reached = false;
+    for (let i = 0; i < text.length; i++) {
+      if (!/\s/.test(text[i])) {
+        count++;
+        if (!reached && count >= threshold) {
+          splitIndex = i + 1;
+          reached = true;
+        }
+      }
+    }
+    if (threshold <= 0) splitIndex = 0;
+    return { total: count, splitIndex };
+  }
+
+  function render() {
+    const text = editor.value;
+    const threshold = Math.max(0, parseInt(thresholdInput.value, 10) || 0);
+    const countAll = includeWhitespace.checked;
+
+    const { total, splitIndex } = analyze(text, threshold, countAll);
+
+    // Rebuild the backdrop so everything past the threshold sits inside
+    // a <mark>, which paints a background exactly behind those characters
+    // (the textarea itself stays fully transparent on top of it).
+    backdrop.textContent = "";
+    backdrop.appendChild(document.createTextNode(text.slice(0, splitIndex)));
+    if (text.length > splitIndex) {
+      const mark = document.createElement("mark");
+      mark.textContent = text.slice(splitIndex);
+      backdrop.appendChild(mark);
+    }
+    // Keep a trailing marker so a final newline still adds visible height,
+    // otherwise the mirrored div can be one line shorter than the textarea.
+    if (text.length === 0 || text.endsWith("\n")) {
+      backdrop.appendChild(document.createTextNode("\u200b"));
+    }
+
+    currentCount.textContent = total.toLocaleString("ja-JP");
+    const diff = threshold - total;
+    if (diff >= 0) {
+      statusText.textContent = `上限まであと ${diff.toLocaleString("ja-JP")} 文字`;
+      statusText.className = "status ok";
+    } else {
+      statusText.textContent = `上限を ${Math.abs(diff).toLocaleString("ja-JP")} 文字超過`;
+      statusText.className = "status over";
+    }
+  }
+
+  function syncScroll() {
+    backdrop.scrollTop = editor.scrollTop;
+  }
+
+  editor.addEventListener("input", () => {
+    render();
+    syncScroll();
+  });
+  editor.addEventListener("scroll", syncScroll);
+  thresholdInput.addEventListener("input", render);
+  includeWhitespace.addEventListener("change", render);
+  clearBtn.addEventListener("click", () => {
+    editor.value = "";
+    render();
+    syncScroll();
+    editor.focus();
+  });
+
+
+  render();
+  syncScroll();
+</script>
+</body>
+</html>
